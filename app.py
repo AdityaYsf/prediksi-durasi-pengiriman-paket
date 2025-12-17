@@ -56,9 +56,9 @@ with st.sidebar:
     
     # Parameter Decision Tree
     st.subheader("Parameter Decision Tree")
-    max_depth = st.slider("Max Depth", 1, 20, 5)
-    min_samples_split = st.slider("Min Samples Split", 2, 20, 2)
-    min_samples_leaf = st.slider("Min Samples Leaf", 1, 10, 1)
+    max_depth = st.slider("Max Depth", 1, 20, 6)
+    min_samples_split = st.slider("Min Samples Split", 2, 20, 5)
+    min_samples_leaf = st.slider("Min Samples Leaf", 1, 10, 2)
     test_size = st.slider("Test Size (%)", 10, 40, 20) / 100
     
     st.markdown("---")
@@ -73,6 +73,12 @@ else:
     st.warning("⚠️ Silakan upload dataset pengiriman.csv")
     st.stop()
 
+# Validasi kolom dataset
+expected_columns = ['Jarak', 'Berat', 'Layanan', 'Cuaca', 'Durasi']
+if not all(col in df.columns for col in expected_columns):
+    st.error(f"❌ Dataset harus memiliki kolom: {', '.join(expected_columns)}")
+    st.stop()
+
 # Tab layout
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Dataset", "🤖 Model Training", "🎯 Prediksi", "📈 Visualisasi"])
 
@@ -80,19 +86,50 @@ tab1, tab2, tab3, tab4 = st.tabs(["📊 Dataset", "🤖 Model Training", "🎯 P
 with tab1:
     st.header("Dataset Pengiriman Paket")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Jumlah Data", len(df))
     with col2:
         st.metric("Jumlah Fitur", len(df.columns) - 1)
     with col3:
         st.metric("Target", "Durasi (jam)")
+    with col4:
+        avg_durasi = df['Durasi'].mean()
+        st.metric("Rata-rata Durasi", f"{avg_durasi:.1f} jam")
     
     st.subheader("Preview Data")
-    st.dataframe(df.head(10), use_container_width=True)
+    st.dataframe(df.head(15), use_container_width=True)
     
     st.subheader("Statistik Deskriptif")
     st.dataframe(df.describe(), use_container_width=True)
+    
+    # Visualisasi distribusi
+    st.subheader("Distribusi Data")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Distribusi Jarak vs Durasi
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.scatter(df['Jarak'], df['Durasi'], alpha=0.6, color='steelblue')
+        ax.set_xlabel('Jarak (km)')
+        ax.set_ylabel('Durasi (jam)')
+        ax.set_title('Korelasi Jarak vs Durasi')
+        correlation = df['Jarak'].corr(df['Durasi'])
+        ax.text(0.05, 0.95, f'Korelasi: {correlation:.3f}', 
+                transform=ax.transAxes, verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        st.pyplot(fig)
+    
+    with col2:
+        # Distribusi per Layanan
+        fig, ax = plt.subplots(figsize=(8, 5))
+        layanan_avg = df.groupby('Layanan')['Durasi'].mean().sort_values()
+        layanan_avg.plot(kind='barh', ax=ax, color='coral')
+        ax.set_xlabel('Rata-rata Durasi (jam)')
+        ax.set_ylabel('Layanan')
+        ax.set_title('Rata-rata Durasi per Layanan')
+        st.pyplot(fig)
     
     st.subheader("Informasi Dataset")
     col1, col2 = st.columns(2)
@@ -103,7 +140,11 @@ with tab1:
     
     with col2:
         st.write("**Missing Values:**")
-        st.write(df.isnull().sum())
+        missing = df.isnull().sum()
+        if missing.sum() == 0:
+            st.success("✅ Tidak ada missing values")
+        else:
+            st.write(missing)
 
 # Tab 2: Model Training
 with tab2:
@@ -116,7 +157,7 @@ with tab2:
             label_encoders = {}
             
             # Encode categorical features
-            categorical_cols = ['Layanan', 'Cuaca', 'Wilayah']
+            categorical_cols = ['Layanan', 'Cuaca']
             for col in categorical_cols:
                 le = LabelEncoder()
                 df_encoded[col] = le.fit_transform(df_encoded[col])
@@ -183,17 +224,41 @@ with tab2:
             st.metric("RMSE", f"{rmse_test:.2f} jam")
             st.metric("R² Score", f"{r2_test:.4f}")
         
+        # Interpretasi hasil
+        st.markdown("---")
+        st.subheader("📋 Interpretasi Hasil")
+        
+        if r2_test > 0.8:
+            st.success(f"✅ Model sangat baik! R² = {r2_test:.4f} (>0.8)")
+        elif r2_test > 0.6:
+            st.info(f"ℹ️ Model cukup baik. R² = {r2_test:.4f} (0.6-0.8)")
+        else:
+            st.warning(f"⚠️ Model perlu improvement. R² = {r2_test:.4f} (<0.6)")
+        
+        st.write(f"**MAE = {mae_test:.2f} jam** → Model rata-rata meleset {mae_test:.2f} jam ({mae_test/24:.2f} hari)")
+        
         # Feature Importance
-        st.subheader("Feature Importance")
+        st.markdown("---")
+        st.subheader("🎯 Feature Importance")
         feature_imp = pd.DataFrame({
             'Feature': st.session_state['feature_names'],
             'Importance': st.session_state['model'].feature_importances_
         }).sort_values('Importance', ascending=False)
         
-        fig, ax = plt.subplots(figsize=(10, 4))
-        sns.barplot(data=feature_imp, x='Importance', y='Feature', palette='viridis', ax=ax)
-        ax.set_title('Feature Importance')
-        st.pyplot(fig)
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            fig, ax = plt.subplots(figsize=(10, 4))
+            sns.barplot(data=feature_imp, x='Importance', y='Feature', palette='viridis', ax=ax)
+            ax.set_title('Feature Importance - Fitur Mana yang Paling Berpengaruh?')
+            ax.set_xlabel('Importance Score')
+            st.pyplot(fig)
+        
+        with col2:
+            st.write("**Ranking Fitur:**")
+            for idx, row in feature_imp.iterrows():
+                percentage = row['Importance'] * 100
+                st.write(f"{row['Feature']}: **{percentage:.1f}%**")
 
 # Tab 3: Prediksi
 with tab3:
@@ -217,18 +282,20 @@ with tab3:
             col1, col2 = st.columns(2)
             
             with col1:
-                jarak = st.number_input("Jarak (km)", min_value=0, max_value=1000, value=50, 
-                                       key=f'jarak_{st.session_state["reset_counter"]}')
+                jarak = st.number_input("Jarak (km)", min_value=0, max_value=300, value=50, 
+                                       key=f'jarak_{st.session_state["reset_counter"]}',
+                                       help="Jarak pengiriman dalam kilometer")
                 berat = st.number_input("Berat (kg)", min_value=0, max_value=100, value=5,
-                                       key=f'berat_{st.session_state["reset_counter"]}')
-                layanan = st.selectbox("Layanan", df['Layanan'].unique(),
-                                      key=f'layanan_{st.session_state["reset_counter"]}')
+                                       key=f'berat_{st.session_state["reset_counter"]}',
+                                       help="Berat paket dalam kilogram")
             
             with col2:
+                layanan = st.selectbox("Layanan", df['Layanan'].unique(),
+                                      key=f'layanan_{st.session_state["reset_counter"]}',
+                                      help="Pilih jenis layanan pengiriman")
                 cuaca = st.selectbox("Cuaca", df['Cuaca'].unique(),
-                                    key=f'cuaca_{st.session_state["reset_counter"]}')
-                wilayah = st.selectbox("Wilayah", df['Wilayah'].unique(),
-                                      key=f'wilayah_{st.session_state["reset_counter"]}')
+                                    key=f'cuaca_{st.session_state["reset_counter"]}',
+                                    help="Kondisi cuaca saat pengiriman")
             
             # Submit button inside form
             predict_button = st.form_submit_button("🎯 Prediksi Durasi", type="primary", use_container_width=True)
@@ -258,10 +325,9 @@ with tab3:
             # Encode input
             layanan_encoded = st.session_state['label_encoders']['Layanan'].transform([layanan])[0]
             cuaca_encoded = st.session_state['label_encoders']['Cuaca'].transform([cuaca])[0]
-            wilayah_encoded = st.session_state['label_encoders']['Wilayah'].transform([wilayah])[0]
             
             # Create input array
-            input_data = np.array([[jarak, berat, layanan_encoded, cuaca_encoded, wilayah_encoded]])
+            input_data = np.array([[jarak, berat, layanan_encoded, cuaca_encoded]])
             
             # Predict
             prediction = st.session_state['model'].predict(input_data)[0]
@@ -274,10 +340,9 @@ with tab3:
                 'berat': berat,
                 'layanan': layanan,
                 'cuaca': cuaca,
-                'wilayah': wilayah,
                 'durasi_prediksi': round(prediction, 1)
             }
-            st.session_state['prediction_history'].insert(0, prediction_record)  # Insert at beginning
+            st.session_state['prediction_history'].insert(0, prediction_record)
             
             # Keep only last 10 predictions
             if len(st.session_state['prediction_history']) > 10:
@@ -285,32 +350,40 @@ with tab3:
             
             # Display result
             st.markdown("---")
-            st.subheader("Hasil Prediksi")
+            st.subheader("✨ Hasil Prediksi")
             
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("Durasi Prediksi", f"{prediction:.1f} jam")
+                st.metric("Durasi Prediksi", f"{prediction:.1f} jam", 
+                         help="Estimasi waktu pengiriman dalam jam")
             with col2:
-                st.metric("Estimasi Hari", f"{prediction/24:.1f} hari")
+                st.metric("Estimasi Hari", f"{prediction/24:.1f} hari",
+                         help="Estimasi waktu pengiriman dalam hari")
             with col3:
                 if prediction < 24:
                     status = "🟢 Cepat"
-                elif prediction < 48:
+                    status_color = "green"
+                elif prediction < 72:
                     status = "🟡 Sedang"
+                    status_color = "orange"
                 else:
                     status = "🔴 Lambat"
+                    status_color = "red"
                 st.metric("Status", status)
             
-            # Detail prediksi
-            st.info(f"""
-            **Detail Pengiriman:**
-            - Jarak: {jarak} km
-            - Berat: {berat} kg
-            - Layanan: {layanan}
-            - Cuaca: {cuaca}
-            - Wilayah: {wilayah}
-            - **Estimasi Durasi: {prediction:.1f} jam ({prediction/24:.1f} hari)**
-            """)
+            # Detail prediksi dengan styling
+            st.markdown(f"""
+            <div style='background-color: #f0f2f6; padding: 1.5rem; border-radius: 0.5rem; border-left: 4px solid {status_color};'>
+                <h4>📦 Detail Pengiriman:</h4>
+                <ul>
+                    <li><b>Jarak:</b> {jarak} km</li>
+                    <li><b>Berat:</b> {berat} kg</li>
+                    <li><b>Layanan:</b> {layanan}</li>
+                    <li><b>Cuaca:</b> {cuaca}</li>
+                    <li><b>Estimasi Durasi:</b> <span style='color: {status_color}; font-size: 1.2em; font-weight: bold;'>{prediction:.1f} jam ({prediction/24:.1f} hari)</span></li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
         
         # Display prediction history
         if len(st.session_state['prediction_history']) > 0:
@@ -325,7 +398,7 @@ with tab3:
             def get_status(durasi):
                 if durasi < 24:
                     return "🟢 Cepat"
-                elif durasi < 48:
+                elif durasi < 72:
                     return "🟡 Sedang"
                 else:
                     return "🔴 Lambat"
@@ -334,11 +407,11 @@ with tab3:
             
             # Reorder columns
             display_df = history_df[['timestamp', 'jarak', 'berat', 'layanan', 'cuaca', 
-                                    'wilayah', 'durasi_prediksi', 'durasi_hari', 'status']]
+                                    'durasi_prediksi', 'durasi_hari', 'status']]
             
             # Rename columns for better display
             display_df.columns = ['Waktu', 'Jarak (km)', 'Berat (kg)', 'Layanan', 
-                                 'Cuaca', 'Wilayah', 'Durasi (jam)', 'Durasi (hari)', 'Status']
+                                 'Cuaca', 'Durasi (jam)', 'Durasi (hari)', 'Status']
             
             st.dataframe(display_df, use_container_width=True, hide_index=True)
 
@@ -349,7 +422,7 @@ with tab4:
     if 'model' not in st.session_state:
         st.warning("⚠️ Silakan train model terlebih dahulu di tab 'Model Training'")
     else:
-        st.subheader("Struktur Decision Tree")
+        st.subheader("🌳 Struktur Decision Tree")
         
         # Plot decision tree
         fig, ax = plt.subplots(figsize=(20, 10))
@@ -361,12 +434,15 @@ with tab4:
             fontsize=10,
             ax=ax
         )
+        ax.set_title('Struktur Decision Tree - Alur Keputusan Model', fontsize=16, pad=20)
         st.pyplot(fig)
+        
+        st.info("💡 **Cara Membaca Tree:** Setiap kotak berisi kondisi (misal: Jarak <= 50), nilai sampel di node tersebut, dan prediksi durasi.")
         
         st.markdown("---")
         
         # Actual vs Predicted
-        st.subheader("Actual vs Predicted Values")
+        st.subheader("📊 Perbandingan Nilai Aktual vs Prediksi")
         
         col1, col2 = st.columns(2)
         
@@ -376,10 +452,12 @@ with tab4:
             ax.scatter(st.session_state['y_train'], st.session_state['y_pred_train'], alpha=0.5)
             ax.plot([st.session_state['y_train'].min(), st.session_state['y_train'].max()], 
                     [st.session_state['y_train'].min(), st.session_state['y_train'].max()], 
-                    'r--', lw=2)
-            ax.set_xlabel('Actual')
-            ax.set_ylabel('Predicted')
+                    'r--', lw=2, label='Perfect Prediction')
+            ax.set_xlabel('Durasi Aktual (jam)')
+            ax.set_ylabel('Durasi Prediksi (jam)')
             ax.set_title('Training Set: Actual vs Predicted')
+            ax.legend()
+            ax.grid(True, alpha=0.3)
             st.pyplot(fig)
         
         with col2:
@@ -388,28 +466,37 @@ with tab4:
             ax.scatter(st.session_state['y_test'], st.session_state['y_pred_test'], alpha=0.5, color='green')
             ax.plot([st.session_state['y_test'].min(), st.session_state['y_test'].max()], 
                     [st.session_state['y_test'].min(), st.session_state['y_test'].max()], 
-                    'r--', lw=2)
-            ax.set_xlabel('Actual')
-            ax.set_ylabel('Predicted')
+                    'r--', lw=2, label='Perfect Prediction')
+            ax.set_xlabel('Durasi Aktual (jam)')
+            ax.set_ylabel('Durasi Prediksi (jam)')
             ax.set_title('Testing Set: Actual vs Predicted')
+            ax.legend()
+            ax.grid(True, alpha=0.3)
             st.pyplot(fig)
         
+        st.info("💡 **Interpretasi:** Semakin dekat titik-titik ke garis merah, semakin akurat prediksi model.")
+        
         # Residual plot
-        st.subheader("Residual Plot")
+        st.markdown("---")
+        st.subheader("📉 Residual Plot")
         residuals = st.session_state['y_test'] - st.session_state['y_pred_test']
         
         fig, ax = plt.subplots(figsize=(10, 6))
-        ax.scatter(st.session_state['y_pred_test'], residuals, alpha=0.5)
-        ax.axhline(y=0, color='r', linestyle='--')
-        ax.set_xlabel('Predicted Values')
-        ax.set_ylabel('Residuals')
-        ax.set_title('Residual Plot')
+        ax.scatter(st.session_state['y_pred_test'], residuals, alpha=0.5, color='purple')
+        ax.axhline(y=0, color='r', linestyle='--', linewidth=2)
+        ax.set_xlabel('Nilai Prediksi (jam)')
+        ax.set_ylabel('Residuals (Actual - Predicted)')
+        ax.set_title('Residual Plot - Analisis Error Model')
+        ax.grid(True, alpha=0.3)
         st.pyplot(fig)
+        
+        st.info("💡 **Interpretasi:** Residual yang tersebar acak di sekitar garis 0 menunjukkan model bagus. Jika ada pola, model perlu ditingkatkan.")
 
 # Footer
 st.markdown("---")
 st.markdown("""
     <div style='text-align: center; color: #666;'>
         <p>📦 Aplikasi Prediksi Durasi Pengiriman Paket | Tugas UAS Machine Learning</p>
+        <p style='font-size: 0.9em;'>Dataset: 4 Fitur (Jarak, Berat, Layanan, Cuaca) → Durasi</p>
     </div>
 """, unsafe_allow_html=True)
