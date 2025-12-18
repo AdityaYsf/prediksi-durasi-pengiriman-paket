@@ -44,13 +44,83 @@ st.markdown("""
 st.markdown('<p class="main-header">📦 Prediksi Durasi Pengiriman Paket</p>', unsafe_allow_html=True)
 st.markdown('<p class="sub-header">Menggunakan Algoritma Decision Tree Regression</p>', unsafe_allow_html=True)
 
+# Function to generate default dataset
+@st.cache_data
+def generate_default_dataset():
+    """Generate dataset default yang realistis"""
+    np.random.seed(42)
+    n_samples = 75
+    
+    data = {
+        'Jarak': [],
+        'Berat': [],
+        'Layanan': [],
+        'Cuaca': [],
+        'Durasi': []
+    }
+    
+    layanan_options = ['Reguler', 'Express', 'Same Day']
+    cuaca_options = ['Cerah', 'Berawan', 'Hujan']
+    
+    layanan_factor = {'Reguler': 1.5, 'Express': 1.0, 'Same Day': 0.6}
+    cuaca_factor = {'Cerah': 1.0, 'Berawan': 1.15, 'Hujan': 1.4}
+    berat_factor = {'ringan': 1.0, 'sedang': 1.1, 'berat': 1.25}
+    
+    for i in range(n_samples):
+        jarak = np.random.randint(10, 201)
+        berat = np.random.randint(1, 51)
+        layanan = np.random.choice(layanan_options)
+        cuaca = np.random.choice(cuaca_options)
+        
+        if berat < 5:
+            berat_cat = 'ringan'
+        elif berat <= 15:
+            berat_cat = 'sedang'
+        else:
+            berat_cat = 'berat'
+        
+        base_duration = (jarak / 40) * 24
+        duration = base_duration
+        duration *= layanan_factor[layanan]
+        duration *= cuaca_factor[cuaca]
+        duration *= berat_factor[berat_cat]
+        
+        noise = np.random.uniform(0.85, 1.15)
+        duration *= noise
+        
+        if layanan == 'Same Day':
+            duration = max(duration, 3)
+        elif layanan == 'Express':
+            duration = max(duration, 8)
+        else:
+            duration = max(duration, 12)
+        
+        duration = round(duration, 1)
+        
+        data['Jarak'].append(jarak)
+        data['Berat'].append(berat)
+        data['Layanan'].append(layanan)
+        data['Cuaca'].append(cuaca)
+        data['Durasi'].append(duration)
+    
+    return pd.DataFrame(data)
+
 # Sidebar
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/4829/4829468.png", width=150)
     st.title("⚙️ Pengaturan")
     
-    # Upload dataset
-    uploaded_file = st.file_uploader("Upload Dataset (CSV)", type=['csv'])
+    # Pilihan sumber dataset
+    st.subheader("📊 Sumber Dataset")
+    dataset_source = st.radio(
+        "Pilih sumber dataset:",
+        ["Dataset Default", "Upload CSV"],
+        help="Dataset Default: Menggunakan data sample yang sudah tersedia\nUpload CSV: Upload dataset kamu sendiri"
+    )
+    
+    uploaded_file = None
+    if dataset_source == "Upload CSV":
+        uploaded_file = st.file_uploader("Upload Dataset (CSV)", type=['csv'])
     
     st.markdown("---")
     
@@ -66,7 +136,10 @@ with st.sidebar:
     st.info("Tugas UAS Machine Learning\n\nPrediksi Durasi Pengiriman Paket")
 
 # Load dataset
-if uploaded_file is not None:
+if dataset_source == "Dataset Default":
+    df = generate_default_dataset()
+    st.info("📊 Menggunakan dataset default (75 data pengiriman)")
+elif uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
     st.success("✅ Dataset berhasil diupload!")
 else:
@@ -374,8 +447,8 @@ with tab3:
             # Detail prediksi dengan styling
             st.markdown(f"""
             <div style='background-color: #f0f2f6; padding: 1.5rem; border-radius: 0.5rem; border-left: 4px solid {status_color};'>
-                <h4>📦 Detail Pengiriman:</h4>
-                <ul>
+                <h4 style='color: #333; margin-top: 0;'>📦 Detail Pengiriman:</h4>
+                <ul style='color: #333; font-size: 1rem;'>
                     <li><b>Jarak:</b> {jarak} km</li>
                     <li><b>Berat:</b> {berat} kg</li>
                     <li><b>Layanan:</b> {layanan}</li>
